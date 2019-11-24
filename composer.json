@@ -1,0 +1,17 @@
+{
+    "name": "osmscripts/deploy",
+    "autoload": {
+        "psr-4": {
+            "OsmScripts\\Deploy\\": "src/"
+        }
+    },
+    "require": {
+        "php": ">=7.1",
+        "osmscripts/core": "1.*"
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.x-dev"
+        }
+    }
+}
