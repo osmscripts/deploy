@@ -1,5 +1,13 @@
 {
     "name": "osmscripts\/deploy",
+    "description": "Command-line script for deploying project updates to the server. Add a command for your every project.",
+    "license": "GPL-3.0-only",
+    "authors": [
+        {
+            "name": "Vladislav Osmianskij",
+            "email": "vlaosm@gmail.com"
+        }
+    ],
     "autoload": {
         "psr-4": {
             "OsmScripts\\Deploy\\": "src\/"
