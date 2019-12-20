@@ -1,6 +1,6 @@
 {
     "name": "osmscripts\/deploy",
-    "description": "Command-line script for deploying project updates to the server. Add a command for your every project.",
+    "description": "Project deployment shell commands. Add a command for every deployed project",
     "license": "GPL-3.0-only",
     "authors": [
         {
