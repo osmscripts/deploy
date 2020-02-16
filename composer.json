@@ -1,6 +1,6 @@
 {
     "name": "osmscripts\/deploy",
-    "description": "Project deployment shell commands. Add a command for every deployed project",
+    "description": "Project deployment shell commands",
     "license": "GPL-3.0-only",
     "authors": [
         {
@@ -15,7 +15,8 @@
     },
     "require": {
         "php": "^7.2",
-        "osmscripts\/core": "^1.0"
+        "osmscripts/core": "^1.1",
+        "osmscripts/phpstorm": "^1.0"
     },
     "bin": [
         "deploy"
