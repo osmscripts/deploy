@@ -2,6 +2,11 @@
     "deploy": {
         "commands": {
             "push": "OsmScripts\\Deploy\\Commands\\Push"
+        },
+        "variables": {
+            "packagist_user": "Your user name on packagist.org",
+            "packagist_token": "Your API token on packagist.org (click 'Your API token' in your packagist.org profile)",
+            "projects": "Deployment configuration for individual projects"
         }
     }
 }
