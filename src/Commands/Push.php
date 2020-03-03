@@ -3,15 +3,17 @@
 namespace OsmScripts\Deploy\Commands;
 
 use OsmScripts\Core\Command;
+use OsmScripts\Core\Configs;
 use OsmScripts\Core\Git;
 use OsmScripts\Core\Package;
 use OsmScripts\Core\Project;
 use OsmScripts\Core\Script;
 use OsmScripts\Core\Shell;
 use OsmScripts\Core\Variables;
-use OsmScripts\Deploy\Hints\DeploymentHint;
+use OsmScripts\Deploy\Config\Config;
 use OsmScripts\PhpStorm\PhpStormProject;
 use Symfony\Component\Console\Input\InputOption;
+use OsmScripts\Deploy\Config\Project as DeploymentProject;
 
 /** @noinspection PhpUnused */
 
@@ -23,19 +25,20 @@ use Symfony\Component\Console\Input\InputOption;
  * @property Git $git Git helper
  * @property Shell $shell @required Helper for running commands in local shell
  * @property Variables $variables Helper for managing script variables
- *
- * @property string $packagist_user
- * @property string $packagist_token
+ * @property Configs $configs Helper for reading configuration files
  *
  * @property Project $project Composer project in the current directory
  * @property PhpStormProject $phpstorm PhpStorm project
+ * @property Config $config Global configuration from `g_deploy.php`
  * @property string[] $paths_under_git
  * @property Package[] $developed_packages
- * @property object|DeploymentHint $deployment
- * @property string[] $allowed_project_branch_patterns
+ * @property DeploymentProject $deployment
+ * @property string[] $push_from
  */
 class Push extends Command
 {
+    public $composer_update_needed = false;
+
     #region Properties
 
     public function default($property) {
@@ -48,20 +51,17 @@ class Push extends Command
             case 'git': return $script->singleton(Git::class);
             case 'shell': return $script->singleton(Shell::class);
             case 'variables': return $script->singleton(Variables::class);
-
-            // command-line arguments and options
-            case 'packagist_user': return $this->input->getOption('packagist-user');
-            case 'packagist_token': return $this->input->getOption('packagist-token');
+            case 'configs': return $script->singleton(Configs::class);
 
             // other
             case 'phpstorm': return new PhpStormProject(['path' => $this->path]);
             case 'project': return new Project(['path' => $this->path]);
+            case 'config': return $this->configs->readGlobalConfig();
             case 'paths_under_git': return $this->getPathsUnderGit();
             case 'developed_packages': return $this->getDevelopedPackages();
-            case 'deployment': return $this->variables->get('projects')->{$this->path}
-                ?? (object)[];
-            case 'allowed_project_branch_patterns':
-                return $this->getAllowedProjectBranchPatterns();
+            case 'deployment': return $this->config->projects[$this->path]
+                ?? new DeploymentProject();
+            case 'push_from': return $this->deployment->push_from;
         }
 
         return parent::default($property);
@@ -96,31 +96,13 @@ class Push extends Command
     }
 
 
-    protected function getAllowedProjectBranchPatterns() {
-        $result = $this->deployment->branch_patterns
-            ?? ['master', 'v\\d+', 'production'];
-
-        if (!is_array($result)) {
-            $result = [$result];
-        }
-
-        return $result;
-    }
-
     #endregion
 
     protected function configure() {
         $this
             ->setDescription('Pushes all developed Git repos in the ' .
                 'current project, versions developed packages and updates ' .
-                'all target projects on all target servers')
-            ->addOption('packagist-user', null, InputOption::VALUE_REQUIRED,
-                'Your user name on packagist.org',
-                $this->variables->get('packagist_user'))
-            ->addOption('packagist-token', null, InputOption::VALUE_REQUIRED,
-                "Your API token on packagist.org (click 'Your API token' in your packagist.org profile)",
-                $this->variables->get('packagist_token'))
-                ;
+                'all target projects on all target servers');
     }
 
     protected function handle() {
@@ -128,6 +110,7 @@ class Push extends Command
         $this->verifyProject();
 
         $this->pushPackages();
+        $this->pushProject();
     }
 
     protected function verifyPackages() {
@@ -178,16 +161,9 @@ class Push extends Command
     }
 
     protected function verifyProject() {
-        if (!is_dir('.git')) {
+        if (!$this->isPushable()) {
             return;
         }
-
-        if (!$this->git->config('remote.origin.url') &&
-            !$this->git->config('remote.origin.pushurl'))
-        {
-            return;
-        }
-
 
         if (!empty($this->git->getUncommittedFiles())) {
             throw new \Exception("Commit pending changes in the project, then run this command again");
@@ -197,7 +173,7 @@ class Push extends Command
             throw new \Exception("This command can only run on " .
                 implode(', ', array_map(function($pattern) {
                     return "'{$pattern}'";
-                }, $this->allowed_project_branch_patterns)).
+                }, $this->push_from)).
                 "branches");
         }
     }
@@ -231,6 +207,27 @@ class Push extends Command
         $this->git->pushTags();
 
         $this->updatePackagist($package);
+
+        $this->composer_update_needed = true;
+    }
+
+    protected function pushProject() {
+        if (!$this->isPushable()) {
+            return;
+        }
+
+        $branch = $this->git->getCurrentBranch();
+
+        $this->git->fetch();
+
+        if ($this->git->remoteBranchExists($branch)) {
+            $this->git->merge("origin/{$branch}");
+        }
+
+        $this->composerUpdate();
+
+        $this->git->push($branch);
+        $this->git->pushTags();
     }
 
     /**
@@ -274,7 +271,7 @@ class Push extends Command
     }
 
     protected function getMajorVersion($branch) {
-        if (preg_match('/^v(<version>\\d+)$/', $branch, $match))
+        if (preg_match('/^v(?<version>\\d+)$/', $branch, $match))
         {
             return intval($match['version']);
         }
@@ -338,8 +335,10 @@ class Push extends Command
             return;
         }
 
+        $user = $this->config->packagist->user ?? null;
+        $token = $this->config->packagist->token ?? null;
         $url = "https://packagist.org/api/update-package" .
-            "?username={$this->packagist_user}&apiToken={$this->packagist_token}";
+            "?username={$user}&apiToken={$token}";
         $context  = stream_context_create([
             'http' => [
                 'header'  => "application/json\r\n",
@@ -384,13 +383,35 @@ class Push extends Command
 
     protected function isOnAllowedBranch() {
         $branch = $this->git->getCurrentBranch();
-        foreach ($this->allowed_project_branch_patterns as $pattern) {
+        foreach ($this->push_from as $pattern) {
             if (preg_match("/{$pattern}/", $branch)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    protected function isPushable() {
+        if (!is_dir('.git')) {
+            return false;
+        }
+
+        if (!$this->git->config('remote.origin.url') &&
+            !$this->git->config('remote.origin.pushurl'))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function composerUpdate() {
+        if (!$this->composer_update_needed) {
+            return;
+        }
+
+        // TODO
     }
 
 }
