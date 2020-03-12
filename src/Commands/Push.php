@@ -11,6 +11,7 @@ use OsmScripts\Core\Script;
 use OsmScripts\Core\Shell;
 use OsmScripts\Core\Variables;
 use OsmScripts\Deploy\Config\Config;
+use OsmScripts\Deploy\Db;
 use OsmScripts\PhpStorm\PhpStormProject;
 use Symfony\Component\Console\Input\InputOption;
 use OsmScripts\Deploy\Config\Project as DeploymentProject;
@@ -26,6 +27,7 @@ use OsmScripts\Deploy\Config\Project as DeploymentProject;
  * @property Shell $shell @required Helper for running commands in local shell
  * @property Variables $variables Helper for managing script variables
  * @property Configs $configs Helper for reading configuration files
+ * @property Db $db Sqlite database for incremental deployments
  *
  * @property Project $project Composer project in the current directory
  * @property PhpStormProject $phpstorm PhpStorm project
@@ -52,6 +54,7 @@ class Push extends Command
             case 'shell': return $script->singleton(Shell::class);
             case 'variables': return $script->singleton(Variables::class);
             case 'configs': return $script->singleton(Configs::class);
+            case 'db': return $script->singleton(Db::class);
 
             // other
             case 'phpstorm': return new PhpStormProject(['path' => $this->path]);
@@ -204,6 +207,7 @@ class Push extends Command
         $this->versionPackage($branch);
 
         $this->git->push($branch);
+        $this->pushTags();
         $this->git->pushTags();
 
         $this->updatePackagist($package);
@@ -412,6 +416,12 @@ class Push extends Command
         }
 
         // TODO
+    }
+
+    protected function pushTags() {
+        $version = $this->db->getVersionTag('', '');
+
+        $this->git->pushTags();
     }
 
 }
