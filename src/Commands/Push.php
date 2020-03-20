@@ -11,9 +11,7 @@ use OsmScripts\Core\Script;
 use OsmScripts\Core\Shell;
 use OsmScripts\Core\Variables;
 use OsmScripts\Deploy\Config\Config;
-use OsmScripts\Deploy\Db;
 use OsmScripts\PhpStorm\PhpStormProject;
-use Symfony\Component\Console\Input\InputOption;
 use OsmScripts\Deploy\Config\Project as DeploymentProject;
 
 /** @noinspection PhpUnused */
@@ -27,7 +25,6 @@ use OsmScripts\Deploy\Config\Project as DeploymentProject;
  * @property Shell $shell @required Helper for running commands in local shell
  * @property Variables $variables Helper for managing script variables
  * @property Configs $configs Helper for reading configuration files
- * @property Db $db Sqlite database for incremental deployments
  *
  * @property Project $project Composer project in the current directory
  * @property PhpStormProject $phpstorm PhpStorm project
@@ -54,7 +51,6 @@ class Push extends Command
             case 'shell': return $script->singleton(Shell::class);
             case 'variables': return $script->singleton(Variables::class);
             case 'configs': return $script->singleton(Configs::class);
-            case 'db': return $script->singleton(Db::class);
 
             // other
             case 'phpstorm': return new PhpStormProject(['path' => $this->path]);
@@ -208,7 +204,6 @@ class Push extends Command
 
         $this->git->push($branch);
         $this->pushTags();
-        $this->git->pushTags();
 
         $this->updatePackagist($package);
 
@@ -345,7 +340,7 @@ class Push extends Command
             "?username={$user}&apiToken={$token}";
         $context  = stream_context_create([
             'http' => [
-                'header'  => "application/json\r\n",
+                'header'  => "Content-Type: application/json\r\n",
                 'method'  => 'POST',
                 'content' => json_encode([
                     'repository' => [
@@ -370,6 +365,10 @@ class Push extends Command
         if (empty($urls)) {
             throw new \Exception("Remote Git repository for " .
                 "'{$package->name}' package is not configured");
+        }
+
+        if (empty($this->project->json->repositories)) {
+            return false;
         }
 
         foreach ($this->project->json->repositories as $repository) {
@@ -415,12 +414,12 @@ class Push extends Command
             return;
         }
 
-        // TODO
+        $this->shell->run('composer update');
+        $this->shell->run('git add .');
+        $this->shell->run('git commit -am "`composer update`"');
     }
 
     protected function pushTags() {
-        $version = $this->db->getVersionTag('', '');
-
         $this->git->pushTags();
     }
 
